@@ -14,25 +14,28 @@
             background-color: #000;
             font-family: sans-serif;
         }
+        /* Video musí být absolutně přes celou obrazovku a nahoře */
         #video-background {
-            position: absolute;
+            position: fixed;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
+            width: 100vw;
+            height: 100vh;
             object-fit: cover;
-            z-index: -1;
+            z-index: 1;
         }
+        /* Canvas s 3D grafikou je nad videem, ale propouští kliknutí skrz */
         #canvas-container {
-            position: absolute;
+            position: fixed;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none; /* Kliknutí procházejí skrz canvas na ovládací prvky */
+            width: 100vw;
+            height: 100vh;
+            z-index: 2;
+            pointer-events: none;
         }
         #ui {
-            position: absolute;
+            position: fixed;
             bottom: 30px;
             width: 100%;
             text-align: center;
@@ -42,7 +45,7 @@
             background-color: #d4af37;
             color: #000;
             border: none;
-            padding: 12px 24px;
+            padding: 14px 28px;
             font-size: 16px;
             font-weight: bold;
             border-radius: 30px;
@@ -50,7 +53,7 @@
             cursor: pointer;
         }
         #info {
-            position: absolute;
+            position: fixed;
             top: 15px;
             width: 100%;
             text-align: center;
@@ -65,17 +68,13 @@
 <body>
     <div id="info">Namiřte telefon z okna a zapněte kameru</div>
     
-    <!-- Element pro živý obraz z kamery -->
     <video id="video-background" autoplay playsinline muted></video>
-    
-    <!-- Kontejner pro Three.js 3D scénu -->
     <div id="canvas-container"></div>
 
     <div id="ui">
         <button id="start-btn">Zapnout kameru</button>
     </div>
 
-    <!-- Import Three.js přes ES moduly z CDN -->
     <script type="importmap">
         {
           "imports": {
@@ -98,33 +97,33 @@
         startBtn.addEventListener('click', async () => {
             try {
                 videoElement = document.getElementById('video-background');
-                
-                // Spuštění zadní kamery telefonu
+                infoDiv.innerText = 'Spouštím kameru...';
+
+                // Univerzálnější požadavek na zadní kameru
                 const constraints = {
                     video: {
-                        facingMode: { exact: "environment" } // Primárně zadní kamera
-                    }
+                        facingMode: "environment",
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    },
+                    audio: false
                 };
                 
-                let stream;
-                try {
-                    stream = await navigator.mediaDevices.getUserMedia(constraints);
-                } catch (err) {
-                    // Pokud zadní kamera selže (např. na notebooku), vezme jakoukoliv dostupnou
-                    stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                }
-
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                
                 videoElement.srcObject = stream;
                 
-                // Skryjeme tlačítko po spuštění
+                // Důležité: počkáme, až se video reálně začne přehrávat, aby se vykresčilo
+                await videoElement.play();
+
                 startBtn.style.display = 'none';
                 infoDiv.innerText = 'Kamera aktivní: 5m kvádr před vámi';
 
-                // Inicializace Three.js světa
                 initThree();
 
             } catch (error) {
-                alert('Chyba při přístupu ke kameře: ' + error.message);
+                alert('Chyba kamery: ' + error.message);
+                infoDiv.innerText = 'Chyba: ' + error.message;
                 console.error(error);
             }
         });
@@ -132,17 +131,15 @@
         function initThree() {
             const container = document.getElementById('canvas-container');
 
-            // 1. Scéna a Kamera
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
 
-            // 2. Renderovací objekt (s průhledným pozadím, aby byla vidět kamera pod ním)
+            // Důležité: alpha: true zajistí průhlednost pozadí canvasu, aby prosvítalo video
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
             container.appendChild(renderer.domElement);
 
-            // 3. Osvětlení
             const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
             light.position.set(0.5, 1, 0.25);
             scene.add(light);
@@ -151,10 +148,9 @@
             directionalLight.position.set(5, 10, 5);
             scene.add(directionalLight);
 
-            // 4. Vytvoření 5x5x5 metrového kvádru
             const geometry = new THREE.BoxGeometry(5, 5, 5);
             const material = new THREE.MeshStandardMaterial({ 
-                color: 0xd4af37, // zlatavá barva
+                color: 0xd4af37,
                 roughness: 0.4,
                 metalness: 0.6,
                 transparent: true,
@@ -162,7 +158,6 @@
             });
 
             cube = new THREE.Mesh(geometry, material);
-            // Umístíme ho 10 metrů před uživatelem
             cube.position.set(0, 0, -10);
             scene.add(cube);
 
@@ -179,7 +174,6 @@
         function animate() {
             requestAnimationFrame(animate);
 
-            // Jemná rotace kvádru, ať je vidět, že se hýbe
             if (cube) {
                 cube.rotation.y += 0.005;
                 cube.rotation.x += 0.002;
