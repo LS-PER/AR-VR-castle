@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>AR Hrad - GPS + Kompas & Šipka</title>
+    <title>AR Hrad - GPS + Kompas</title>
     <style>
         body, html {
             margin: 0;
@@ -63,7 +63,6 @@
             background: rgba(0,0,0,0.6);
             padding: 10px;
         }
-        /* Styl pro navigační šipku */
         #radar-hud {
             position: fixed;
             top: 80px;
@@ -82,9 +81,8 @@
     </style>
 </head>
 <body>
-    <div id="info">Čekám na GPS, kompas a spuštění...</div>
+    <div id="info">Klikněte na tlačítko pro spuštění</div>
     
-    <!-- Navigační šipka ukazující směr ke kvádru -->
     <div id="radar-hud">
         <div id="nav-arrow">⬆️</div>
     </div>
@@ -112,9 +110,8 @@
         let cube;
         let videoElement;
         let userPos = null;
-        let heading = 0; // Natočení telefonu (kompas)
+        let heading = 0;
 
-        // Cílové GPS souřadnice
         const targetGPS = {
             lat: 49.8823061,
             lon: 14.4123647,
@@ -127,37 +124,37 @@
 
         startBtn.addEventListener('click', async () => {
             try {
-                infoDiv.innerText = 'Spouštím senzory a kameru...';
+                infoDiv.innerText = 'Spouštím kameru...';
 
-                // 1. Vyžádání oprávnění pro kompas na iOS (pokud je potřeba) i Android
-                if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-                    await DeviceOrientationEvent.requestPermission();
+                // 1. Spuštění zadní kamery (bezpečný fallback)
+                videoElement = document.getElementById('camera-stream');
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: { ideal: "environment" } },
+                        audio: false
+                    });
+                    videoElement.srcObject = stream;
+                    await videoElement.play();
+                } catch (camErr) {
+                    console.warn("Zadní kamera selhala, zkouším libovolnou:", camErr);
+                    const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                    videoElement.srcObject = fallbackStream;
+                    await videoElement.play();
                 }
 
-                // 2. Sledování kompasu (DeviceOrientation)
+                infoDiv.innerText = 'Čekám na GPS polohu...';
+
+                // 2. Aktivace kompasu pro Android / univerzální podporu
                 window.addEventListener('deviceorientation', (event) => {
-                    if (event.webkitCompassHeading !== undefined) {
-                        // iOS Safari
-                        heading = event.webkitCompassHeading;
-                    } else if (event.alpha !== undefined) {
-                        // Android Chrome (alpha vrací otočení kompasu)
+                    if (event.alpha !== undefined) {
                         heading = 360 - event.alpha;
                     }
                     updateNavigation();
                 }, true);
 
-                // 3. Spuštění zadní kamery
-                videoElement = document.getElementById('camera-stream');
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
-                    audio: false
-                });
-                videoElement.srcObject = stream;
-                await videoElement.play();
-
-                // 4. Sledování GPS polohy
+                // 3. Sledování GPS polohy
                 if (!navigator.geolocation) {
-                    alert('Geolokace není podporována.');
+                    alert('Geolokace není v tomto prohlížeči podporována.');
                     return;
                 }
 
@@ -172,6 +169,7 @@
                     },
                     (error) => {
                         infoDiv.innerText = 'Chyba GPS: ' + error.message;
+                        console.error(error);
                     },
                     { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 }
                 );
@@ -180,7 +178,8 @@
                 initThree();
 
             } catch (error) {
-                alert('Chyba: ' + error.message);
+                alert('Chyba spuštění: ' + error.message);
+                infoDiv.innerText = 'Chyba: ' + error.message;
                 console.error(error);
             }
         });
@@ -204,11 +203,10 @@
             directionalLight.position.set(5, 10, 5);
             scene.add(directionalLight);
 
-            // Vytvoření velkého svítícího 8m kvádru
             const geometry = new THREE.BoxGeometry(8, 8, 8);
             const material = new THREE.MeshStandardMaterial({ 
                 color: 0xffd700,
-                emissive: 0xffaa00,      // Svítí sama od sebe
+                emissive: 0xffaa00,
                 emissiveIntensity: 1.0,
                 roughness: 0.1,
                 metalness: 0.9,
@@ -218,3 +216,69 @@
 
             cube = new THREE.Mesh(geometry, material);
             scene.add(cube);
+            cube.visible = false; 
+
+            window.addEventListener('resize', onWindowResize);
+            animate();
+        }
+
+        function calculateBearing(lat1, lon1, lat2, lon2) {
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            lat1 = lat1 * Math.PI / 180;
+            lat2 = lat2 * Math.PI / 180;
+            const y = Math.sin(dLon) * Math.cos(lat2);
+            const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+            let brng = Math.atan2(y, x) * 180 / Math.PI;
+            return (brng + 360) % 360;
+        }
+
+        function updateNavigation() {
+            if (!userPos || !cube) return;
+
+            const R = 6371000; 
+            const dLat = (targetGPS.lat - userPos.lat) * Math.PI / 180;
+            const dLon = (targetGPS.lon - userPos.lon) * Math.PI / 180;
+            
+            const lat1 = userPos.lat * Math.PI / 180;
+            const lat2 = targetGPS.lat * Math.PI / 180;
+
+            const x = dLon * Math.cos((lat1 + lat2) / 2) * R; 
+            const z = dLat * R; 
+            const y = 0; 
+
+            cube.position.set(x, y, -z);
+            cube.visible = true;
+
+            const dist = Math.sqrt(x*x + z*z).toFixed(1);
+
+            const targetBearing = calculateBearing(userPos.lat, userPos.lon, targetGPS.lat, targetGPS.lon);
+            let angleDiff = targetBearing - heading;
+            angleDiff = (angleDiff + 540) % 360 - 180;
+
+            navArrow.style.transform = `rotate(${angleDiff}deg)`;
+            
+            if (Math.abs(angleDiff) < 25) {
+                navArrow.innerText = '🎯 CÍL PŘED TEBOU';
+            } else {
+                navArrow.innerText = '⬆️';
+            }
+
+            infoDiv.innerText = `Vzdálenost: ${dist} m | X:${x.toFixed(1)} Z:${z.toFixed(1)}`;
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (cube) {
+                cube.rotation.y += 0.005;
+            }
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
