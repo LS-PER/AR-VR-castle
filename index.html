@@ -165,15 +165,15 @@
             scene.add(directionalLight);
 
             // Vytvoření 5x5x5 metrového kvádru se svítivou (emissive) složkou, ať je vidět i ve tmě
-            const geometry = new THREE.BoxGeometry(5, 5, 5);
+            const geometry = new THREE.BoxGeometry(8, 8, 8); // Větší kvádr pro snazší nalezení
             const material = new THREE.MeshStandardMaterial({ 
-                color: 0xffd700,         // Zlatá barva
-                emissive: 0xffaa00,      // Vlastní záře (svítí sama od sebe)
-                emissiveIntensity: 0.8,  // Intenzita záře
-                roughness: 0.2,
-                metalness: 0.8,
+                color: 0xffd700,         
+                emissive: 0xffaa00,      // Svítí sama od sebe
+                emissiveIntensity: 1.0,  // Plná záře
+                roughness: 0.1,
+                metalness: 0.9,
                 transparent: true,
-                opacity: 0.9
+                opacity: 0.95
             });
         
             cube = new THREE.Mesh(geometry, material);
@@ -184,6 +184,7 @@
             animate();
         }
 
+      
         function updateObjectPosition() {
             if (!userPos || !cube) return;
 
@@ -196,7 +197,9 @@
 
             const x = dLon * Math.cos((lat1 + lat2) / 2) * R; 
             const z = dLat * R; 
-            const y = targetGPS.alt - userPos.alt; 
+            
+            // ZAFIXOVÁNÍ VÝŠKY: Ignorujeme nepřesnou GPS výšku a dáme kvádr do roviny očí (y = 0)
+            const y = 0; 
 
             cube.position.set(x, y, -z);
             cube.visible = true;
@@ -204,6 +207,9 @@
             const dist = Math.sqrt(x*x + z*z).toFixed(1);
             infoDiv.innerText = `Cíl vzdálen: ${dist} m | X:${x.toFixed(1)} Z:${z.toFixed(1)}`;
         }
+
+
+        
 
         function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
