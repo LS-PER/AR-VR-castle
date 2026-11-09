@@ -3,32 +3,79 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>AR Hrad - Prototyp 5m kvádr</title>
+    <title>AR Hrad - Univerzální kamera</title>
     <style>
-        body {
+        body, html {
             margin: 0;
             padding: 0;
             overflow: hidden;
-            font-family: sans-serif;
+            width: 100%;
+            height: 100%;
             background-color: #000;
-            color: #fff;
+            font-family: sans-serif;
         }
-        #info {
+        #video-background {
             position: absolute;
-            top: 10px;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: -1;
+        }
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* Kliknutí procházejí skrz canvas na ovládací prvky */
+        }
+        #ui {
+            position: absolute;
+            bottom: 30px;
             width: 100%;
             text-align: center;
             z-index: 10;
-            pointer-events: none;
+        }
+        button {
+            background-color: #d4af37;
+            color: #000;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 30px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            cursor: pointer;
+        }
+        #info {
+            position: absolute;
+            top: 15px;
+            width: 100%;
+            text-align: center;
+            color: #fff;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.9);
             font-size: 14px;
-            text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+            z-index: 10;
+            pointer-events: none;
         }
     </style>
 </head>
 <body>
-    <div id="info">Naměř telefon a stiskněte tlačítko Start AR</div>
+    <div id="info">Namiřte telefon z okna a zapněte kameru</div>
+    
+    <!-- Element pro živý obraz z kamery -->
+    <video id="video-background" autoplay playsinline muted></video>
+    
+    <!-- Kontejner pro Three.js 3D scénu -->
+    <div id="canvas-container"></div>
 
-    <!-- Import Three.js a ARButton přes ES moduly z CDN -->
+    <div id="ui">
+        <button id="start-btn">Zapnout kameru</button>
+    </div>
+
+    <!-- Import Three.js přes ES moduly z CDN -->
     <script type="importmap">
         {
           "imports": {
@@ -40,30 +87,62 @@
 
     <script type="module">
         import * as THREE from 'three';
-        import { ARButton } from 'three/addons/webxr/ARButton.js';
 
         let camera, scene, renderer;
         let cube;
+        let videoElement;
 
-        init();
-        animate();
+        const startBtn = document.getElementById('start-btn');
+        const infoDiv = document.getElementById('info');
 
-        function init() {
-            const container = document.createElement('div');
-            document.body.appendChild(container);
+        startBtn.addEventListener('click', async () => {
+            try {
+                videoElement = document.getElementById('video-background');
+                
+                // Spuštění zadní kamery telefonu
+                const constraints = {
+                    video: {
+                        facingMode: { exact: "environment" } // Primárně zadní kamera
+                    }
+                };
+                
+                let stream;
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia(constraints);
+                } catch (err) {
+                    // Pokud zadní kamera selže (např. na notebooku), vezme jakoukoliv dostupnou
+                    stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                }
+
+                videoElement.srcObject = stream;
+                
+                // Skryjeme tlačítko po spuštění
+                startBtn.style.display = 'none';
+                infoDiv.innerText = 'Kamera aktivní: 5m kvádr před vámi';
+
+                // Inicializace Three.js světa
+                initThree();
+
+            } catch (error) {
+                alert('Chyba při přístupu ke kameře: ' + error.message);
+                console.error(error);
+            }
+        });
+
+        function initThree() {
+            const container = document.getElementById('canvas-container');
 
             // 1. Scéna a Kamera
             scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 1000);
+            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
 
-            // 2. Renderovací objekt s podporou WebXR
+            // 2. Renderovací objekt (s průhledným pozadím, aby byla vidět kamera pod ním)
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.xr.enabled = true; // Klíčové pro AR!
             container.appendChild(renderer.domElement);
 
-            // 3. Osvětlení (aby byl kvádr hezky plastický)
+            // 3. Osvětlení
             const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
             light.position.set(0.5, 1, 0.25);
             scene.add(light);
@@ -72,13 +151,10 @@
             directionalLight.position.set(5, 10, 5);
             scene.add(directionalLight);
 
-            // 4. Vytvoření 5x5x5 metrového kvádru (obelisku)
-            // V Three.js jsou jednotky v metrech, takže 5, 5, 5 odpovídá reálným 5 metrům.
+            // 4. Vytvoření 5x5x5 metrového kvádru
             const geometry = new THREE.BoxGeometry(5, 5, 5);
-            
-            // Nastavíme materiál (poloprůhledná červená/zlatá, ať je vidět skrze něj)
             const material = new THREE.MeshStandardMaterial({ 
-                color: 0xd4af37, // zlatavá barva starého hradu
+                color: 0xd4af37, // zlatavá barva
                 roughness: 0.4,
                 metalness: 0.6,
                 transparent: true,
@@ -86,18 +162,12 @@
             });
 
             cube = new THREE.Mesh(geometry, material);
-            
-            // Umístíme ho 10 metrů před uživatelem a 2.5 metru dolů 
-            // (aby střed kvádru byl nad zemí, box má rozsah od -2.5 do +2.5 na Y)
+            // Umístíme ho 10 metrů před uživatelem
             cube.position.set(0, 0, -10);
             scene.add(cube);
 
-            // 5. Vytvoření WebXR AR tlačítka
-            document.body.appendChild(ARButton.createButton(renderer, { 
-                requiredFeatures: ['hit-test'] 
-            }));
-
             window.addEventListener('resize', onWindowResize);
+            animate();
         }
 
         function onWindowResize() {
@@ -107,13 +177,12 @@
         }
 
         function animate() {
-            renderer.setAnimationLoop(render);
-        }
+            requestAnimationFrame(animate);
 
-        function render(timestamp, frame) {
-            // Můžeme nechat kvádr jemně rotovat, ať je hned vidět, že žije
+            // Jemná rotace kvádru, ať je vidět, že se hýbe
             if (cube) {
                 cube.rotation.y += 0.005;
+                cube.rotation.x += 0.002;
             }
 
             renderer.render(scene, camera);
