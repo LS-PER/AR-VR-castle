@@ -164,16 +164,18 @@
             directionalLight.position.set(5, 10, 5);
             scene.add(directionalLight);
 
-            // Vytvoření 5x5x5 metrového kvádru
+            // Vytvoření 5x5x5 metrového kvádru se svítivou (emissive) složkou, ať je vidět i ve tmě
             const geometry = new THREE.BoxGeometry(5, 5, 5);
             const material = new THREE.MeshStandardMaterial({ 
-                color: 0xd4af37,
-                roughness: 0.4,
-                metalness: 0.6,
+                color: 0xffd700,         // Zlatá barva
+                emissive: 0xffaa00,      // Vlastní záře (svítí sama od sebe)
+                emissiveIntensity: 0.8,  // Intenzita záře
+                roughness: 0.2,
+                metalness: 0.8,
                 transparent: true,
-                opacity: 0.85
+                opacity: 0.9
             });
-
+        
             cube = new THREE.Mesh(geometry, material);
             scene.add(cube);
             cube.visible = false; 
