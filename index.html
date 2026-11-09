@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>AR Hrad - Prototyp 5m kvádr</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: sans-serif;
+            background-color: #000;
+            color: #fff;
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            z-index: 10;
+            pointer-events: none;
+            font-size: 14px;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+        }
+    </style>
+</head>
+<body>
+    <div id="info">Naměř telefon a stiskněte tlačítko Start AR</div>
+
+    <!-- Import Three.js a ARButton přes ES moduly z CDN -->
+    <script type="importmap">
+        {
+          "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+          }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { ARButton } from 'three/addons/webxr/ARButton.js';
+
+        let camera, scene, renderer;
+        let cube;
+
+        init();
+        animate();
+
+        function init() {
+            const container = document.createElement('div');
+            document.body.appendChild(container);
+
+            // 1. Scéna a Kamera
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 1000);
+
+            // 2. Renderovací objekt s podporou WebXR
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.xr.enabled = true; // Klíčové pro AR!
+            container.appendChild(renderer.domElement);
+
+            // 3. Osvětlení (aby byl kvádr hezky plastický)
+            const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
+            light.position.set(0.5, 1, 0.25);
+            scene.add(light);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
+            directionalLight.position.set(5, 10, 5);
+            scene.add(directionalLight);
+
+            // 4. Vytvoření 5x5x5 metrového kvádru (obelisku)
+            // V Three.js jsou jednotky v metrech, takže 5, 5, 5 odpovídá reálným 5 metrům.
+            const geometry = new THREE.BoxGeometry(5, 5, 5);
+            
+            // Nastavíme materiál (poloprůhledná červená/zlatá, ať je vidět skrze něj)
+            const material = new THREE.MeshStandardMaterial({ 
+                color: 0xd4af37, // zlatavá barva starého hradu
+                roughness: 0.4,
+                metalness: 0.6,
+                transparent: true,
+                opacity: 0.85
+            });
+
+            cube = new THREE.Mesh(geometry, material);
+            
+            // Umístíme ho 10 metrů před uživatelem a 2.5 metru dolů 
+            // (aby střed kvádru byl nad zemí, box má rozsah od -2.5 do +2.5 na Y)
+            cube.position.set(0, 0, -10);
+            scene.add(cube);
+
+            // 5. Vytvoření WebXR AR tlačítka
+            document.body.appendChild(ARButton.createButton(renderer, { 
+                requiredFeatures: ['hit-test'] 
+            }));
+
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            renderer.setAnimationLoop(render);
+        }
+
+        function render(timestamp, frame) {
+            // Můžeme nechat kvádr jemně rotovat, ať je hned vidět, že žije
+            if (cube) {
+                cube.rotation.y += 0.005;
+            }
+
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
