@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>AR Hrad - GPS + Kompas</title>
+    <title>AR Hrad - Modrý objekt & GLB ready</title>
     <style>
         body, html {
             margin: 0;
@@ -40,8 +40,8 @@
             z-index: 10;
         }
         button {
-            background-color: #d4af37;
-            color: #000;
+            background-color: #3b82f6; /* Modré tlačítko */
+            color: #fff;
             border: none;
             padding: 14px 28px;
             font-size: 16px;
@@ -74,14 +74,14 @@
         #nav-arrow {
             display: inline-block;
             font-size: 40px;
-            color: #ffd700;
+            color: #3b82f6;
             text-shadow: 0 2px 5px rgba(0,0,0,0.9);
             transition: transform 0.1s ease-out;
         }
     </style>
 </head>
 <body>
-    <div id="info">Klikněte na tlačítko pro spuštění</div>
+    <div id="info">Klikněte pro spuštění AR</div>
     
     <div id="radar-hud">
         <div id="nav-arrow">⬆️</div>
@@ -91,9 +91,10 @@
     <div id="canvas-container"></div>
 
     <div id="ui">
-        <button id="start-btn">Spustit AR navigaci</button>
+        <button id="start-btn">Spustit AR aplikaci</button>
     </div>
 
+    <!-- Importmap pro Three.js a GLTFLoader -->
     <script type="importmap">
         {
           "imports": {
@@ -105,13 +106,15 @@
 
     <script type="module">
         import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
         let camera, scene, renderer;
-        let cube;
+        let arObject = null;
         let videoElement;
         let userPos = null;
         let heading = 0;
 
+        // Cílové GPS souřadnice
         const targetGPS = {
             lat: 49.8823061,
             lon: 14.4123647,
@@ -126,25 +129,18 @@
             try {
                 infoDiv.innerText = 'Spouštím kameru...';
 
-                // 1. Spuštění zadní kamery (bezpečný fallback)
+                // 1. Spuštění kamery
                 videoElement = document.getElementById('camera-stream');
-                try {
-                    const stream = await navigator.mediaDevices.getUserMedia({
-                        video: { facingMode: { ideal: "environment" } },
-                        audio: false
-                    });
-                    videoElement.srcObject = stream;
-                    await videoElement.play();
-                } catch (camErr) {
-                    console.warn("Zadní kamera selhala, zkouším libovolnou:", camErr);
-                    const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-                    videoElement.srcObject = fallbackStream;
-                    await videoElement.play();
-                }
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: { ideal: "environment" } },
+                    audio: false
+                });
+                videoElement.srcObject = stream;
+                await videoElement.play();
 
                 infoDiv.innerText = 'Čekám na GPS polohu...';
 
-                // 2. Aktivace kompasu pro Android / univerzální podporu
+                // 2. Kompas
                 window.addEventListener('deviceorientation', (event) => {
                     if (event.alpha !== undefined) {
                         heading = 360 - event.alpha;
@@ -152,9 +148,9 @@
                     updateNavigation();
                 }, true);
 
-                // 3. Sledování GPS polohy
+                // 3. GPS poloha
                 if (!navigator.geolocation) {
-                    alert('Geolokace není v tomto prohlížeči podporována.');
+                    alert('Geolokace není podporována.');
                     return;
                 }
 
@@ -169,7 +165,6 @@
                     },
                     (error) => {
                         infoDiv.innerText = 'Chyba GPS: ' + error.message;
-                        console.error(error);
                     },
                     { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 }
                 );
@@ -178,8 +173,7 @@
                 initThree();
 
             } catch (error) {
-                alert('Chyba spuštění: ' + error.message);
-                infoDiv.innerText = 'Chyba: ' + error.message;
+                alert('Chyba: ' + error.message);
                 console.error(error);
             }
         });
@@ -188,14 +182,15 @@
             const container = document.getElementById('canvas-container');
 
             scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 10000);
+            // Zvětšená vykreslovací vzdálenost (far: 50000 metrů), aby objekt nezmizel v dálce
+            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 50000);
 
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
             container.appendChild(renderer.domElement);
 
-            const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
+            const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1.2);
             light.position.set(0.5, 1, 0.25);
             scene.add(light);
 
@@ -203,20 +198,35 @@
             directionalLight.position.set(5, 10, 5);
             scene.add(directionalLight);
 
+            // ==========================================
+            // VYTVOŘENÍ OBJEKTU (2x2x2m, modrý, průhledný, bez rotace)
+            // ==========================================
             const geometry = new THREE.BoxGeometry(2, 2, 2);
             const material = new THREE.MeshStandardMaterial({ 
-                color: 0xffd700,
-                emissive: 0xffaa00,
-                emissiveIntensity: 1.0,
-                roughness: 0.1,
-                metalness: 0.9,
+                color: 0x3b82f6,         // Modrá barva
+                emissive: 0x1d4ed8,      // Jemná modrá záře
+                emissiveIntensity: 0.5,
+                roughness: 0.3,
+                metalness: 0.2,
                 transparent: true,
-                opacity: 0.95
+                opacity: 0.5             // Větší průhlednost (50%)
             });
 
-            cube = new THREE.Mesh(geometry, material);
-            scene.add(cube);
-            cube.visible = false; 
+            arObject = new THREE.Mesh(geometry, material);
+            scene.add(arObject);
+            arObject.visible = false; 
+
+            // TIP PRO NAČTENÍ GLB MODELU Z IFC (až budeš mít model nahraný v repozitáři):
+            /*
+            const loader = new GLTFLoader();
+            loader.load('model.glb', (gltf) => {
+                scene.remove(arObject); // smaže modrý kvádr
+                arObject = gltf.scene;
+                arObject.scale.set(1, 1, 1); // případné škálování modelu
+                scene.add(arObject);
+                arObject.visible = false;
+            });
+            */
 
             window.addEventListener('resize', onWindowResize);
             animate();
@@ -233,7 +243,7 @@
         }
 
         function updateNavigation() {
-            if (!userPos || !cube) return;
+            if (!userPos || !arObject) return;
 
             const R = 6371000; 
             const dLat = (targetGPS.lat - userPos.lat) * Math.PI / 180;
@@ -246,8 +256,8 @@
             const z = dLat * R; 
             const y = 0; 
 
-            cube.position.set(x, y, -z);
-            cube.visible = true;
+            arObject.position.set(x, y, -z);
+            arObject.visible = true;
 
             const dist = Math.sqrt(x*x + z*z).toFixed(1);
 
@@ -263,7 +273,7 @@
                 navArrow.innerText = '⬆️';
             }
 
-            infoDiv.innerText = `Vzdálenost: ${dist} m | X:${x.toFixed(1)} Z:${z.toFixed(1)}`;
+            infoDiv.innerText = `Vzdálenost: ${dist} m | Modrý objekt 2x2m`;
         }
 
         function onWindowResize() {
@@ -274,9 +284,7 @@
 
         function animate() {
             requestAnimationFrame(animate);
-            if (cube) {
-                cube.rotation.y += 0.005;
-            }
+            // Rotace byla odstraněna, objekt stojí pevně v prostoru
             renderer.render(scene, camera);
         }
     </script>
