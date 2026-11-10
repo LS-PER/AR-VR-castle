@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>AR Hrad - Modrý objekt & GLB ready</title>
+    <title>AR Hrad - Pokročilá Georeference</title>
     <style>
         body, html {
             margin: 0;
@@ -34,18 +34,17 @@
         }
         #ui {
             position: fixed;
-            bottom: 30px;
+            bottom: 20px;
             width: 100%;
             text-align: center;
             z-index: 10;
         }
-        /* Štítek pro kontrolu verze/commitu */
         #commit-badge {
             color: #94a3b8;
             font-size: 12px;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
             text-shadow: 0 1px 2px rgba(0,0,0,0.9);
-            background: rgba(0, 0, 0, 0.5);
+            background: rgba(0, 0, 0, 0.6);
             display: inline-block;
             padding: 4px 10px;
             border-radius: 10px;
@@ -60,8 +59,6 @@
             border-radius: 30px;
             box-shadow: 0 4px 15px rgba(0,0,0,0.5);
             cursor: pointer;
-            display: block;
-            margin: 0 auto;
         }
         #info {
             position: fixed;
@@ -70,43 +67,50 @@
             text-align: center;
             color: #fff;
             text-shadow: 0 1px 3px rgba(0,0,0,0.9);
-            font-size: 14px;
+            font-size: 13px;
             z-index: 10;
             pointer-events: none;
             background: rgba(0,0,0,0.6);
-            padding: 10px;
+            padding: 8px;
         }
-        #radar-hud {
+        /* Ovládací panel pro korekci pozice v terénu */
+        #controls-panel {
             position: fixed;
-            top: 80px;
-            width: 100%;
-            text-align: center;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
             z-index: 10;
-            pointer-events: none;
         }
-        #nav-arrow {
-            display: inline-block;
-            font-size: 40px;
-            color: #3b82f6;
-            text-shadow: 0 2px 5px rgba(0,0,0,0.9);
-            transition: transform 0.1s ease-out;
+        .ctrl-btn {
+            background: rgba(0,0,0,0.7);
+            color: #fff;
+            border: 1px solid #3b82f6;
+            padding: 10px;
+            font-size: 12px;
+            border-radius: 8px;
+            cursor: pointer;
         }
     </style>
 </head>
 <body>
-    <div id="info">Klikněte pro spuštění AR</div>
+    <div id="info">Inicializace AR...</div>
     
-    <div id="radar-hud">
-        <div id="nav-arrow">⬆️</div>
-    </div>
-
     <video id="camera-stream" autoplay playsinline muted></video>
     <div id="canvas-container"></div>
 
+    <div id="controls-panel" style="display:none;">
+        <button class="ctrl-btn" id="btn-up">Výška +2m</button>
+        <button class="ctrl-btn" id="btn-down">Výška -2m</button>
+        <button class="ctrl-btn" id="btn-near">Bližše 5m</button>
+        <button class="ctrl-btn" id="btn-far">Dále 5m</button>
+    </div>
+
     <div id="ui">
-        <!-- Zde uvidíš aktuální verzi/commit na hlavní obrazovce -->
-        <div id="commit-badge">Verze: Modrý 2m objekt + šipka</div>
-        <button id="start-btn">Spustit AR aplikaci</button>
+        <div id="commit-badge">v3.0 - Pokročilá Georeference & Gyro</div><br>
+        <button id="start-btn">Spustit AR Kalibraci</button>
     </div>
 
     <script type="importmap">
@@ -120,23 +124,23 @@
 
     <script type="module">
         import * as THREE from 'three';
-        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
         let camera, scene, renderer;
         let arObject = null;
         let videoElement;
         let userPos = null;
-        let heading = 0;
+        let manualYOffset = 0; // Ruční úprava výšky
+        let manualDistOffset = 0; // Ruční úprava vzdálenosti
 
+        // Cílové GPS souřadnice
         const targetGPS = {
             lat: 49.8823061,
-            lon: 14.4123647,
-            alt: 250
+            lon: 14.4123647
         };
 
         const startBtn = document.getElementById('start-btn');
         const infoDiv = document.getElementById('info');
-        const navArrow = document.getElementById('nav-arrow');
+        const ctrlPanel = document.getElementById('controls-panel');
 
         startBtn.addEventListener('click', async () => {
             try {
@@ -150,14 +154,10 @@
                 videoElement.srcObject = stream;
                 await videoElement.play();
 
-                infoDiv.innerText = 'Čekám na GPS polohu...';
+                infoDiv.innerText = 'Čekám na GPS...';
 
-                window.addEventListener('deviceorientation', (event) => {
-                    if (event.alpha !== undefined) {
-                        heading = 360 - event.alpha;
-                    }
-                    updateNavigation();
-                }, true);
+                // Orientace zařízení v prostoru
+                window.addEventListener('deviceorientation', onDeviceOrientation, true);
 
                 if (!navigator.geolocation) {
                     alert('Geolokace není podporována.');
@@ -168,24 +168,21 @@
                     (position) => {
                         userPos = {
                             lat: position.coords.latitude,
-                            lon: position.coords.longitude,
-                            alt: position.coords.altitude || 250
+                            lon: position.coords.longitude
                         };
-                        updateNavigation();
+                        updateGeoreference();
                     },
-                    (error) => {
-                        infoDiv.innerText = 'Chyba GPS: ' + error.message;
-                    },
-                    { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 }
+                    (err) => { infoDiv.innerText = 'Chyba GPS: ' + err.message; },
+                    { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
                 );
 
                 startBtn.style.display = 'none';
-                document.getElementById('commit-badge').style.display = 'none'; // Schová štítek po spuštění
+                document.getElementById('commit-badge').style.display = 'none';
+                ctrlPanel.style.display = 'flex';
                 initThree();
 
             } catch (error) {
                 alert('Chyba: ' + error.message);
-                console.error(error);
             }
         });
 
@@ -193,89 +190,76 @@
             const container = document.getElementById('canvas-container');
 
             scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 50000);
+            // Nastavíme zorný úhel (FOV 60°) blízko typickým mobilním čočkám
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
 
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
             container.appendChild(renderer.domElement);
 
-            const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1.2);
-            light.position.set(0.5, 1, 0.25);
+            const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1.5);
             scene.add(light);
 
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
-            directionalLight.position.set(5, 10, 5);
-            scene.add(directionalLight);
-
-            // Modrý 2x2x2m objekt
+            // Modrý objekt 2x2x2 metry (50% průhlednost)
             const geometry = new THREE.BoxGeometry(2, 2, 2);
             const material = new THREE.MeshStandardMaterial({ 
                 color: 0x3b82f6,
                 emissive: 0x1d4ed8,
-                emissiveIntensity: 0.5,
-                roughness: 0.3,
-                metalness: 0.2,
+                emissiveIntensity: 0.6,
                 transparent: true,
                 opacity: 0.5
             });
 
             arObject = new THREE.Mesh(geometry, material);
             scene.add(arObject);
-            arObject.visible = false; 
+            arObject.visible = false;
+
+            // Ovládání tlačítky pro jemné doladění na místě
+            document.getElementById('btn-up').onclick = () => { manualYOffset += 2; updateGeoreference(); };
+            document.getElementById('btn-down').onclick = () => { manualYOffset -= 2; updateGeoreference(); };
+            document.getElementById('btn-near').onclick = () => { manualDistOffset -= 5; updateGeoreference(); };
+            document.getElementById('btn-far').onclick = () => { manualDistOffset += 5; updateGeoreference(); };
 
             window.addEventListener('resize', onWindowResize);
             animate();
         }
 
-        function calculateBearing(lat1, lon1, lat2, lon2) {
-            const dLon = (lon2 - lon1) * Math.PI / 180;
-            lat1 = lat1 * Math.PI / 180;
-            lat2 = lat2 * Math.PI / 180;
-            const y = Math.sin(dLon) * Math.cos(lat2);
-            const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
-            let brng = Math.atan2(y, x) * 180 / Math.PI;
-            return (brng + 360) % 360;
+        // Orientace kamery Three.js podle gyroskopu telefonu
+        function onDeviceOrientation(event) {
+            if (!event.alpha && !event.beta && !event.gamma) return;
+            
+            const alpha = THREE.MathUtils.degToRad(event.alpha || 0);
+            const beta = THREE.MathUtils.degToRad(event.beta || 0);
+            const gamma = THREE.MathUtils.degToRad(event.gamma || 0);
+
+            const euler = new THREE.Euler(beta, alpha, -gamma, 'YXZ');
+            camera.quaternion.setFromEuler(euler);
         }
 
-        function updateNavigation() {
+        // Přesný georeferenční přepočet WGS84 -> Metrický prostor
+        function updateGeoreference() {
             if (!userPos || !arObject) return;
 
-            const R = 6371000; 
-            const dLat = (targetGPS.lat - userPos.lat) * Math.PI / 180;
-            const dLon = (targetGPS.lon - userPos.lon) * Math.PI / 180;
-            
             const lat1 = userPos.lat * Math.PI / 180;
             const lat2 = targetGPS.lat * Math.PI / 180;
+            const dLat = (targetGPS.lat - userPos.lat) * Math.PI / 180;
+            const dLon = (targetGPS.lon - userPos.lon) * Math.PI / 180;
 
+            const R = 6378137; // Equatorial radius
             const x = dLon * Math.cos((lat1 + lat2) / 2) * R; 
             const z = dLat * R; 
-            const y = 0; 
 
-            arObject.position.set(x, y, -z);
+            // Aplikace pozice v metrech + ruční korekce výšky/vzdálenosti
+            const finalX = x;
+            const finalZ = -z + manualDistOffset;
+            const finalY = manualYOffset;
+
+            arObject.position.set(finalX, finalY, finalZ);
             arObject.visible = true;
 
             const dist = Math.sqrt(x*x + z*z).toFixed(1);
-
-            const targetBearing = calculateBearing(userPos.lat, userPos.lon, targetGPS.lat, targetGPS.lon);
-            let angleDiff = targetBearing - heading;
-            angleDiff = (angleDiff + 540) % 360 - 180;
-
-            navArrow.style.transform = `rotate(${angleDiff}deg)`;
-            
-            if (Math.abs(angleDiff) < 25) {
-                navArrow.innerText = '🎯 CÍL PŘED TEBOU';
-            } else {
-                navArrow.innerText = '⬆️';
-            }
-
-            infoDiv.innerText = `Vzdálenost: ${dist} m | Modrý objekt 2x2m`;
-        }
-
-        function onWindowResponse() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
+            infoDiv.innerText = `Vzdálenost: ${dist}m | Y-offset: ${manualYOffset}m`;
         }
 
         function onWindowResize() {
