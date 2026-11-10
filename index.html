@@ -39,8 +39,19 @@
             text-align: center;
             z-index: 10;
         }
+        /* Štítek pro kontrolu verze/commitu */
+        #commit-badge {
+            color: #94a3b8;
+            font-size: 12px;
+            margin-bottom: 10px;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.9);
+            background: rgba(0, 0, 0, 0.5);
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 10px;
+        }
         button {
-            background-color: #3b82f6; /* Modré tlačítko */
+            background-color: #3b82f6; 
             color: #fff;
             border: none;
             padding: 14px 28px;
@@ -49,6 +60,8 @@
             border-radius: 30px;
             box-shadow: 0 4px 15px rgba(0,0,0,0.5);
             cursor: pointer;
+            display: block;
+            margin: 0 auto;
         }
         #info {
             position: fixed;
@@ -91,10 +104,11 @@
     <div id="canvas-container"></div>
 
     <div id="ui">
+        <!-- Zde uvidíš aktuální verzi/commit na hlavní obrazovce -->
+        <div id="commit-badge">Verze: Modrý 2m objekt + šipka</div>
         <button id="start-btn">Spustit AR aplikaci</button>
     </div>
 
-    <!-- Importmap pro Three.js a GLTFLoader -->
     <script type="importmap">
         {
           "imports": {
@@ -114,7 +128,6 @@
         let userPos = null;
         let heading = 0;
 
-        // Cílové GPS souřadnice
         const targetGPS = {
             lat: 49.8823061,
             lon: 14.4123647,
@@ -129,7 +142,6 @@
             try {
                 infoDiv.innerText = 'Spouštím kameru...';
 
-                // 1. Spuštění kamery
                 videoElement = document.getElementById('camera-stream');
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: { ideal: "environment" } },
@@ -140,7 +152,6 @@
 
                 infoDiv.innerText = 'Čekám na GPS polohu...';
 
-                // 2. Kompas
                 window.addEventListener('deviceorientation', (event) => {
                     if (event.alpha !== undefined) {
                         heading = 360 - event.alpha;
@@ -148,7 +159,6 @@
                     updateNavigation();
                 }, true);
 
-                // 3. GPS poloha
                 if (!navigator.geolocation) {
                     alert('Geolokace není podporována.');
                     return;
@@ -170,6 +180,7 @@
                 );
 
                 startBtn.style.display = 'none';
+                document.getElementById('commit-badge').style.display = 'none'; // Schová štítek po spuštění
                 initThree();
 
             } catch (error) {
@@ -182,7 +193,6 @@
             const container = document.getElementById('canvas-container');
 
             scene = new THREE.Scene();
-            // Zvětšená vykreslovací vzdálenost (far: 50000 metrů), aby objekt nezmizel v dálce
             camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 50000);
 
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -198,35 +208,21 @@
             directionalLight.position.set(5, 10, 5);
             scene.add(directionalLight);
 
-            // ==========================================
-            // VYTVOŘENÍ OBJEKTU (2x2x2m, modrý, průhledný, bez rotace)
-            // ==========================================
+            // Modrý 2x2x2m objekt
             const geometry = new THREE.BoxGeometry(2, 2, 2);
             const material = new THREE.MeshStandardMaterial({ 
-                color: 0x3b82f6,         // Modrá barva
-                emissive: 0x1d4ed8,      // Jemná modrá záře
+                color: 0x3b82f6,
+                emissive: 0x1d4ed8,
                 emissiveIntensity: 0.5,
                 roughness: 0.3,
                 metalness: 0.2,
                 transparent: true,
-                opacity: 0.5             // Větší průhlednost (50%)
+                opacity: 0.5
             });
 
             arObject = new THREE.Mesh(geometry, material);
             scene.add(arObject);
             arObject.visible = false; 
-
-            // TIP PRO NAČTENÍ GLB MODELU Z IFC (až budeš mít model nahraný v repozitáři):
-            /*
-            const loader = new GLTFLoader();
-            loader.load('model.glb', (gltf) => {
-                scene.remove(arObject); // smaže modrý kvádr
-                arObject = gltf.scene;
-                arObject.scale.set(1, 1, 1); // případné škálování modelu
-                scene.add(arObject);
-                arObject.visible = false;
-            });
-            */
 
             window.addEventListener('resize', onWindowResize);
             animate();
@@ -276,6 +272,12 @@
             infoDiv.innerText = `Vzdálenost: ${dist} m | Modrý objekt 2x2m`;
         }
 
+        function onWindowResponse() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
         function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
@@ -284,7 +286,6 @@
 
         function animate() {
             requestAnimationFrame(animate);
-            // Rotace byla odstraněna, objekt stojí pevně v prostoru
             renderer.render(scene, camera);
         }
     </script>
